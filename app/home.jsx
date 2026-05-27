@@ -116,12 +116,18 @@ export default function HomeScreen() {
 
       <View style={styles.card}>
         <Text style={styles.versionText}>
-          Esta es la primera versión de la app: login, sesión persistente,
-          conexión con el backend y cierre de sesión.
+          Continúa con el registro de síntomas, el calendario y el foro. Todo
+          está conectado con el backend real.
         </Text>
       </View>
 
       <View style={styles.actions}>
+        <PrimaryButton
+          title="Registro de síntomas"
+          onPress={() => router.push("/symptoms")}
+        />
+        <PrimaryButton title="Calendario" onPress={() => router.push("/calendar")} />
+        <PrimaryButton title="Foro" onPress={() => router.push("/forum")} />
         <PrimaryButton
           title="Actualizar usuario"
           onPress={() => loadUser({ showLoader: true })}

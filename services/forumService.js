@@ -12,7 +12,11 @@ export async function createPost(data) {
 
 export async function getPostById(id) {
   const response = await api.get(`/api/forum/posts/${id}`);
-  return response.data.post;
+
+  return {
+    ...response.data.post,
+    comments: response.data.comments || [],
+  };
 }
 
 export async function createComment(postId, data) {

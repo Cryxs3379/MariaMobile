@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Platform,
@@ -7,8 +7,9 @@ import {
   Text,
   View,
 } from "react-native";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 
+import DailyCheckinCard from "../components/DailyCheckinCard";
 import PrimaryButton from "../components/PrimaryButton";
 import {
   getMe,
@@ -16,6 +17,7 @@ import {
   logout,
   restoreSession,
 } from "../services/authService";
+import { getTodayCheckin } from "../services/checkinsService";
 import { saveUser } from "../storage/authStorage";
 
 function formatBoolean(value) {
@@ -26,6 +28,8 @@ export default function HomeScreen() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [todayCheckinStatus, setTodayCheckinStatus] = useState(null);
+  const [loadingCheckin, setLoadingCheckin] = useState(true);
   const [error, setError] = useState("");
 
   async function loadUser({ showLoader = false } = {}) {
@@ -62,11 +66,30 @@ export default function HomeScreen() {
       }
 
       setUser(restoredUser);
+      await loadTodayCheckin();
     } catch {
       await logout();
       router.replace("/login");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadTodayCheckin() {
+    try {
+      setLoadingCheckin(true);
+      const status = await getTodayCheckin();
+      setTodayCheckinStatus(status);
+    } catch (checkinError) {
+      if (checkinError?.response?.status === 401 || checkinError?.response?.status === 403) {
+        await logout();
+        router.replace("/login");
+        return;
+      }
+
+      setError(getAuthErrorMessage(checkinError));
+    } finally {
+      setLoadingCheckin(false);
     }
   }
 
@@ -78,6 +101,14 @@ export default function HomeScreen() {
   useEffect(() => {
     restoreUserSession();
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!loading) {
+        loadTodayCheckin();
+      }
+    }, [loading])
+  );
 
   if (loading) {
     return (
@@ -96,6 +127,12 @@ export default function HomeScreen() {
           Tu sesión está conectada con el backend real.
         </Text>
       </View>
+
+      <DailyCheckinCard
+        todayStatus={todayCheckinStatus}
+        loading={loadingCheckin}
+        onPress={() => router.push("/daily-checkin")}
+      />
 
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>Datos del usuario</Text>

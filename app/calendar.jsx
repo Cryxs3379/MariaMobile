@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
+import { Calendar as MonthlyCalendar } from "react-native-calendars";
 
 import AppHeader from "../components/AppHeader";
 import CheckinCard from "../components/CheckinCard";
@@ -10,12 +11,83 @@ import { getAuthErrorMessage, logout } from "../services/authService";
 import { getCheckins } from "../services/checkinsService";
 import { getEvents } from "../services/eventsService";
 
+function getTodayDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function toDateKey(value) {
+  if (!value) {
+    return null;
+  }
+
+  return new Date(value).toISOString().slice(0, 10);
+}
+
+function formatSelectedDate(value) {
+  return new Date(`${value}T00:00:00`).toLocaleDateString();
+}
+
 export default function CalendarScreen() {
   const [events, setEvents] = useState([]);
   const [checkins, setCheckins] = useState([]);
+  const [selectedDate, setSelectedDate] = useState(getTodayDate());
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+
+  const markedDates = useMemo(() => {
+    const marks = {};
+
+    events.forEach((event) => {
+      const dateKey = toDateKey(event.start_date);
+
+      if (!dateKey) {
+        return;
+      }
+
+      marks[dateKey] = {
+        ...(marks[dateKey] || {}),
+        dots: [
+          ...(marks[dateKey]?.dots || []),
+          { key: `event-${event.id}`, color: "#2563EB" },
+        ],
+      };
+    });
+
+    checkins.forEach((checkin) => {
+      const dateKey = toDateKey(checkin.checkin_date);
+
+      if (!dateKey) {
+        return;
+      }
+
+      marks[dateKey] = {
+        ...(marks[dateKey] || {}),
+        dots: [
+          ...(marks[dateKey]?.dots || []),
+          { key: `checkin-${checkin.id}`, color: "#16A34A" },
+        ],
+      };
+    });
+
+    marks[selectedDate] = {
+      ...(marks[selectedDate] || {}),
+      selected: true,
+      selectedColor: "#2563EB",
+    };
+
+    return marks;
+  }, [checkins, events, selectedDate]);
+
+  const selectedEvents = useMemo(
+    () => events.filter((event) => toDateKey(event.start_date) === selectedDate),
+    [events, selectedDate]
+  );
+
+  const selectedCheckin = useMemo(
+    () => checkins.find((checkin) => toDateKey(checkin.checkin_date) === selectedDate),
+    [checkins, selectedDate]
+  );
 
   async function loadCalendarData({ showLoader = false } = {}) {
     try {
@@ -86,30 +158,70 @@ export default function CalendarScreen() {
         </View>
       ) : (
         <>
-          <Text style={styles.sectionTitle}>Eventos</Text>
-          {events.length === 0 ? (
-            <Text style={styles.empty}>Todavía no tienes eventos en el calendario.</Text>
-          ) : (
-            <View style={styles.list}>
-              {events.map((event) => (
-                <EventCard key={event.id} event={event} />
-              ))}
-            </View>
-          )}
+          <View style={styles.calendarCard}>
+            <MonthlyCalendar
+              markingType="multi-dot"
+              markedDates={markedDates}
+              onDayPress={(day) => setSelectedDate(day.dateString)}
+              firstDay={1}
+              theme={{
+                arrowColor: "#2563EB",
+                calendarBackground: "#FFFFFF",
+                dayTextColor: "#0F172A",
+                monthTextColor: "#0F172A",
+                selectedDayBackgroundColor: "#2563EB",
+                selectedDayTextColor: "#FFFFFF",
+                textDisabledColor: "#CBD5E1",
+                textMonthFontWeight: "900",
+                textDayFontWeight: "700",
+                todayTextColor: "#2563EB",
+              }}
+            />
 
-          <Text style={styles.sectionTitle}>Chequeos diarios</Text>
-          {checkins.length === 0 ? (
-            <Text style={styles.empty}>Todavía no tienes chequeos diarios registrados.</Text>
-          ) : (
-            <View style={styles.list}>
-              {checkins.map((checkin) => (
-                <CheckinCard key={checkin.id} checkin={checkin} />
-              ))}
+            <View style={styles.legend}>
+              <LegendItem color="#2563EB" label="Evento" />
+              <LegendItem color="#16A34A" label="Chequeo diario" />
             </View>
-          )}
+          </View>
+
+          <View style={styles.detailCard}>
+            <Text style={styles.sectionTitle}>Detalle del día</Text>
+            <Text style={styles.selectedDate}>{formatSelectedDate(selectedDate)}</Text>
+
+            {selectedEvents.length === 0 && !selectedCheckin ? (
+              <Text style={styles.empty}>Este día no tiene eventos ni chequeo diario.</Text>
+            ) : null}
+
+            {selectedEvents.length > 0 ? (
+              <View style={styles.detailSection}>
+                <Text style={styles.detailTitle}>Eventos de este día</Text>
+                <View style={styles.list}>
+                  {selectedEvents.map((event) => (
+                    <EventCard key={event.id} event={event} />
+                  ))}
+                </View>
+              </View>
+            ) : null}
+
+            {selectedCheckin ? (
+              <View style={styles.detailSection}>
+                <Text style={styles.detailTitle}>Chequeo diario</Text>
+                <CheckinCard checkin={selectedCheckin} />
+              </View>
+            ) : null}
+          </View>
         </>
       )}
     </ScrollView>
+  );
+}
+
+function LegendItem({ color, label }) {
+  return (
+    <View style={styles.legendItem}>
+      <View style={[styles.legendDot, { backgroundColor: color }]} />
+      <Text style={styles.legendText}>{label}</Text>
+    </View>
   );
 }
 
@@ -124,16 +236,67 @@ const styles = StyleSheet.create({
     gap: 12,
     marginBottom: 18,
   },
+  calendarCard: {
+    backgroundColor: "#FFFFFF",
+    borderColor: "#E2E8F0",
+    borderRadius: 24,
+    borderWidth: 1,
+    marginBottom: 18,
+    overflow: "hidden",
+    padding: 12,
+  },
+  legend: {
+    borderTopColor: "#E2E8F0",
+    borderTopWidth: 1,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 14,
+    marginTop: 12,
+    padding: 14,
+  },
+  legendItem: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+  },
+  legendDot: {
+    borderRadius: 999,
+    height: 10,
+    width: 10,
+  },
+  legendText: {
+    color: "#64748B",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  detailCard: {
+    backgroundColor: "#FFFFFF",
+    borderColor: "#E2E8F0",
+    borderRadius: 24,
+    borderWidth: 1,
+    gap: 12,
+    padding: 18,
+  },
+  detailSection: {
+    gap: 12,
+  },
+  detailTitle: {
+    color: "#0F172A",
+    fontSize: 17,
+    fontWeight: "900",
+  },
   list: {
     gap: 14,
-    marginBottom: 22,
   },
   sectionTitle: {
     color: "#0F172A",
     fontSize: 20,
     fontWeight: "900",
-    marginBottom: 12,
-    marginTop: 4,
+  },
+  selectedDate: {
+    color: "#64748B",
+    fontSize: 15,
+    fontWeight: "800",
   },
   loadingBox: {
     alignItems: "center",
